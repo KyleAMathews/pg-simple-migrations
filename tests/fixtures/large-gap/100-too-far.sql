@@ -1,0 +1,1 @@
+CREATE TABLE too_far (id SERIAL PRIMARY KEY);

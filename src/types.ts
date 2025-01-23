@@ -4,4 +4,5 @@ export interface Migration {
   path: string
   hash: string
   sql: string
+  hasRun?: boolean
 }

@@ -196,6 +196,53 @@ describe('scanMigrations', () => {
       })
     })
 
+    describe('migration number validation', () => {
+      it('should filter out previously run migrations', async () => {
+        // First verify we can scan without previousMigrations
+        const migrations = await scanMigrations(getFixturePath('lower-than-max'))
+        expect(migrations).toHaveLength(2)
+        expect(migrations.map(m => m.number)).toEqual([5, 10])
+
+        // Now try with migration 1 and 10 as previously run
+        const previousMigrations = [
+          { number: 5, name: 'first', path: '', hash: '', sql: '' },
+        ]
+        const newMigrations = await scanMigrations(getFixturePath('lower-than-max'), { previousMigrations })
+        expect(newMigrations).toHaveLength(1)
+        expect(newMigrations[0].number).toBe(10)
+      })
+
+      it('should throw error when new migration number is lower than max', async () => {
+        // Set up previous migrations with number 10
+        const previousMigrations = [
+          { number: 10, name: 'third', path: '', hash: '', sql: '' }
+        ]
+
+        // Should throw when trying to add migration 5
+        await expect(
+          scanMigrations(getFixturePath('lower-than-max'), { previousMigrations })
+        ).rejects.toThrow('Invalid migration number: 5. New migrations must be numbered higher than the highest existing migration (10).')
+      })
+
+      it('should throw error on large gaps between migration numbers', async () => {
+        await expect(
+          scanMigrations(getFixturePath('large-gap'))
+        ).rejects.toThrow('Migration gap too large: 99 between migrations 1 and 100. Maximum allowed gap is 50.')
+      })
+
+      it('should allow configurable max gap', async () => {
+        // Should pass with maxGap = 100
+        const migrations = await scanMigrations(getFixturePath('large-gap'), { maxGap: 100 })
+        expect(migrations).toHaveLength(2)
+        expect(migrations.map(m => m.number)).toEqual([1, 100])
+
+        // Should fail with maxGap = 20
+        await expect(
+          scanMigrations(getFixturePath('large-gap'), { maxGap: 20 })
+        ).rejects.toThrow('Migration gap too large: 99 between migrations 1 and 100. Maximum allowed gap is 20.')
+      })
+    })
+
     describe('complex error cases', () => {
       it('should handle decimal numbers in filenames', async () => {
         await scanMigrations(getFixturePath('complex-errors'))
