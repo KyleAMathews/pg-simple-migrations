@@ -23,27 +23,31 @@
   5. Verify new migrations are higher than max previous migration
 
 ### 2. Migration State Manager (`src/state.ts`)
-- Creates and manages the migrations state table (`_migrations`)
+- Manages the migrations state table within a specified schema
 - Table schema:
   ```sql
-  CREATE TABLE IF NOT EXISTS _migrations (
-    id SERIAL PRIMARY KEY,
-    migration_number BIGINT NOT NULL,
+  CREATE TABLE IF NOT EXISTS <schema>.pg_simple_migrations (
+    number INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
-    executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    hash TEXT NOT NULL
+    hash TEXT NOT NULL,
+    executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
   );
   ```
+- Creates an index on the `number` column for faster lookups
 - Queries for completed migrations
 - Records newly completed migrations
 - Provides list of previously run migrations to scanner for validation
+- Does not manage schema creation (schemas must exist before using the tool)
 
 ### 3. Migration Runner (`src/runner.ts`)
-- Establishes database connection using DATABASE_URL
-- Compares available migrations with completed ones
-- Runs pending migrations in sequence
-- Handles transaction management
-- Provides detailed error reporting
+- Coordinates between Scanner and StateManager
+- Runs migrations in the specified schema
+- Handles transaction management:
+  - Wraps each migration in a transaction
+  - Rolls back on failure
+  - Records successful migrations in state table
+- Provides detailed error reporting and logging
+- Assumes schema exists (does not create schemas)
 
 ### 4. CLI Interface (`src/cli.ts`)
 - Provides command-line interface
@@ -99,56 +103,32 @@ pg-simple-migrations/
     - Non-SQL extensions
     - Invalid SQL syntax
     - Invalid number formats
-    - Unicode characters in names
-  - Database connection issues
-
-## Build & Package
-- TypeScript compilation via tsup
-- Generates both ESM and CJS outputs
-- Ships with type definitions
-- Minimal dependencies:
-  - `pg` for PostgreSQL connectivity
-  - `dotenv` for environment handling
-  - `commander` for CLI interface
-
-## Error Handling
-- Detailed error messages for common scenarios:
-  - Invalid migration file names
-  - SQL syntax errors
-  - Database connection issues
-  - Concurrent migration attempts
-  - Missing environment variables
-  - Invalid migration numbers:
-    - Numbers lower than highest previous migration
-    - Gaps larger than maximum allowed
-  - Duplicate migration numbers
-- Automatic rollback of failed migrations
-- Logging of migration progress and errors
-- Clear warning messages for ignored files
+- Test isolation:
+  - Uses unique schema names per test to prevent conflicts
+  - Properly cleans up schemas between tests
+  - Handles concurrent test execution safely
 
 ## Security Considerations
-- No sensitive data in migration state table
-- Uses connection string from environment variable only
-- Validates SQL files before execution
+- Validates SQL before execution
 - Runs migrations in transactions for atomicity
 - Validates file names to prevent directory traversal
 - Ignores hidden files and non-SQL extensions
+- Does not attempt to create schemas (must be pre-existing)
+- Uses parameterized queries for all database operations
 
 ## Migration File Rules
-1. File Naming:
-   - Must match pattern: `<number>-<name>.sql`
-   - Number must be a positive integer
-   - Name can contain letters, numbers, underscores, dashes
-   - File must have .sql extension
-   - No hidden files (starting with .)
+1. Files must be named: `<number>-<description>.sql`
+2. Numbers must be positive integers
+3. New migration numbers must be higher than all existing ones
+4. Maximum gap between consecutive migrations is configurable
+5. Files must have `.sql` extension
+6. Files cannot be hidden (no leading `.`)
+7. SQL must be valid PostgreSQL syntax
+8. SQL must reference schema explicitly (e.g., `CREATE TABLE myschema.table`)
 
-2. Migration Numbers:
-   - Must be higher than all previously run migrations
-   - Maximum allowed gap between consecutive new migrations (default: 50)
-   - No duplicate numbers allowed
-   - Must be valid positive integers
-
-3. SQL Content:
-   - Must be valid SQL syntax
-   - Validated before migration is accepted
-   - Tracked with SHA-256 hash to detect changes
+## Schema Management
+- The tool does not create or manage schemas
+- Schemas must exist before running migrations
+- Migration files must explicitly reference schemas in their SQL
+- State table is created in a specified schema (defaults to 'public')
+- Multiple instances can run concurrently in different schemas

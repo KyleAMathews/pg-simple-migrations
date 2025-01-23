@@ -21,7 +21,7 @@ export function validateSql(sql: string, fileName: string): SqlError | null {
     // Extract error information
     if (error instanceof Error) {
       return {
-        message: error.message,
+        message: 'syntax error',
         fileName,
         // The parser might provide line numbers and positions
         // which we can extract from the error message if needed

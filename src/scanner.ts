@@ -22,7 +22,7 @@ export async function scanMigrations(directory: string, options: ScanOptions = {
   const ignoredFiles: { file: string; reason: string }[] = []
   
   // Filter and parse SQL files
-  const migrationPromises = files
+  const validFiles = files
     .filter(file => {
       // Skip hidden files
       if (file.startsWith('.')) {
@@ -63,36 +63,43 @@ export async function scanMigrations(directory: string, options: ScanOptions = {
       
       return true
     })
-    .map(async file => {
-      const match = file.match(MIGRATION_FILE_PATTERN)!
-      const [, numberStr, name] = match
-      const number = parseInt(numberStr, 10)
-      const filePath = path.join(directory, file)
-      const sql = await fs.readFile(filePath, 'utf-8')
-      
-      // Validate SQL syntax
-      const sqlError = validateSql(sql, file)
-      if (sqlError) {
-        throw new Error(
-          `Invalid SQL in migration ${file}: ${sqlError.message}` +
-          (sqlError.lineNumber ? ` at line ${sqlError.lineNumber}` : '')
-        )
-      }
-
-      // Calculate SHA-256 hash of file contents
-      const hash = crypto
-        .createHash('sha256')
-        .update(sql)
-        .digest('hex')
-
-      return {
-        number,
-        name: name.trim(), // Trim any whitespace from the name
-        path: filePath,
-        hash,
-        sql
-      }
+    // Sort files by migration number
+    .sort((a, b) => {
+      const aMatch = a.match(MIGRATION_FILE_PATTERN)!
+      const bMatch = b.match(MIGRATION_FILE_PATTERN)!
+      return parseInt(aMatch[1], 10) - parseInt(bMatch[1], 10)
     })
+
+  const migrationPromises = validFiles.map(async file => {
+    const match = file.match(MIGRATION_FILE_PATTERN)!
+    const [, numberStr, name] = match
+    const number = parseInt(numberStr, 10)
+    const filePath = path.join(directory, file)
+    const sql = await fs.readFile(filePath, 'utf-8')
+    
+    // Validate SQL syntax
+    const sqlError = validateSql(sql, file)
+    if (sqlError) {
+      throw new Error(
+        `Invalid SQL in migration ${file}: ${sqlError.message}` +
+        (sqlError.lineNumber ? ` at line ${sqlError.lineNumber}` : '')
+      )
+    }
+
+    // Calculate SHA-256 hash of file contents
+    const hash = crypto
+      .createHash('sha256')
+      .update(sql)
+      .digest('hex')
+
+    return {
+      number,
+      name: name.trim(), // Trim any whitespace from the name
+      path: filePath,
+      hash,
+      sql
+    }
+  })
 
   // Log any ignored files
   if (ignoredFiles.length > 0) {
