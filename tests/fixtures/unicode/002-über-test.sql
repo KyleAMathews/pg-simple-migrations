@@ -1,0 +1,1 @@
+CREATE TABLE umlaut_test (id SERIAL PRIMARY KEY);

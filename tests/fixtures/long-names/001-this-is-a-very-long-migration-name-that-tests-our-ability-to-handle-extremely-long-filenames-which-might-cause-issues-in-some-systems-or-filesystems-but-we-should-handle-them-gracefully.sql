@@ -1,0 +1,1 @@
+CREATE TABLE long_name_test (id SERIAL PRIMARY KEY);

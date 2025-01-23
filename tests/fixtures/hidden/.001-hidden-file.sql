@@ -1,0 +1,1 @@
+CREATE TABLE hidden_test (id SERIAL PRIMARY KEY);
