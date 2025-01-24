@@ -11,7 +11,7 @@ export interface RunnerOptions {
 
 export class Runner {
   private pool: Pool
-  private stateManager: StateManager
+  public stateManager: StateManager
   private directory: string
   private options: RunnerOptions
 

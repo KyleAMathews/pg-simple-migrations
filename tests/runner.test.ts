@@ -5,6 +5,7 @@ import path from 'path'
 import os from 'os'
 import { Runner } from '../src/runner'
 import { getUniqueSchemaName } from './utils/test-helpers'
+import { table } from 'console'
 
 describe('Runner', () => {
   let pool: Pool
@@ -108,6 +109,129 @@ describe('Runner', () => {
       const status = await runner.status()
       expect(status).toHaveLength(2)
       expect(status.every(m => m.hasRun)).toBe(true)
+    })
+  })
+
+  describe('real-world migrations', () => {
+    beforeEach(async () => {
+      // Use real-world migrations instead of test migrations
+      runner = new Runner(path.join(__dirname, 'fixtures/real-world'), pool, {
+        schema,
+        migrationTableSchema: schema,
+      })
+    })
+
+    it('should execute complex schema migrations', async () => {
+      await runner.migrate()
+
+      // Verify enum type was created and modified
+      const enumResult = await pool.query(`
+        SELECT e.enumlabel
+        FROM pg_enum e
+        JOIN pg_type t ON e.enumtypid = t.oid
+        WHERE t.typname = 'resource_state'
+        ORDER BY e.enumsortorder
+      `)
+      expect(enumResult.rows.map(r => r.enumlabel)).toEqual([
+        'initializing',
+        'waiting',
+        'starting',
+        'active',
+        'stopping',
+        'error',
+        'deleted',
+        'accepted'
+      ])
+
+      // Verify tables were created with correct structure
+      const tables = [
+        'resources',
+        'resource_event_logs',
+        'organizations',
+        'members',
+        'organization_members',
+        'organization_resources',
+        'audit_logs',
+        'resource_setup_forms'
+      ]
+
+      for (const table of tables) {
+        const result = await pool.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = $1 
+            AND table_name = $2
+          )
+        `, [schema, table])
+        expect(result.rows[0].exists).toBe(true)
+      }
+
+      // Verify triggers were created
+      const triggerResult = await pool.query(`
+        SELECT trigger_name
+        FROM information_schema.triggers
+        WHERE trigger_schema = $1
+        AND event_manipulation = 'UPDATE'
+      `, [schema])
+      const triggerNames = triggerResult.rows.map(r => r.trigger_name)
+      expect(triggerNames).toContain('set_timestamp')
+      expect(triggerNames).toContain('set_timestamp_organizations')
+      expect(triggerNames).toContain('set_timestamp_members')
+
+      // Verify default data was inserted
+      const orgResult = await pool.query(`
+        SELECT * FROM ${schema}.organizations WHERE name = $1
+      `, ['example-org'])
+      expect(orgResult.rows).toHaveLength(1)
+
+      const memberResult = await pool.query(`
+        SELECT * FROM ${schema}.members WHERE email = $1
+      `, ['admin@example.com'])
+      expect(memberResult.rows).toHaveLength(1)
+
+      // Verify audit logs were created
+      const auditResult = await pool.query(`
+        SELECT * FROM ${schema}.audit_logs
+      `)
+      expect(auditResult.rows.length).toBeGreaterThan(0)
+    })
+
+    it('should handle table renames and constraint updates', async () => {
+      await runner.migrate()
+
+      // Verify foreign key constraints after table renames
+      const fkResult = await pool.query(`
+        SELECT
+          tc.constraint_name,
+          tc.table_name,
+          kcu.column_name,
+          ccu.table_name AS foreign_table_name,
+          ccu.column_name AS foreign_column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage ccu
+          ON ccu.constraint_name = tc.constraint_name
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.table_schema = $1
+        ORDER BY tc.table_name, kcu.column_name
+      `, [schema])
+
+      // Verify specific foreign key relationships
+      const fks = fkResult.rows
+      expect(fks).toContainEqual(expect.objectContaining({
+        table_name: 'resource_event_logs',
+        column_name: 'resource_id',
+        foreign_table_name: 'resources',
+        foreign_column_name: 'id'
+      }))
+
+      expect(fks).toContainEqual(expect.objectContaining({
+        table_name: 'organization_resources',
+        column_name: 'resource_id',
+        foreign_table_name: 'resources',
+        foreign_column_name: 'id'
+      }))
     })
   })
 })

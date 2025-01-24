@@ -331,5 +331,56 @@ describe('scanMigrations', () => {
         }
       })
     })
+
+    describe('real-world migrations', () => {
+      it('should handle complex migration scenarios', async () => {
+        const migrations = await scanMigrations(getFixturePath('real-world'))
+        expect(migrations).toHaveLength(9)
+        
+        // Verify migration numbers are sequential
+        expect(migrations.map(m => m.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        
+        // Verify migration names
+        expect(migrations.map(m => m.name)).toEqual([
+          'create-items-table',
+          'add-event-logs',
+          'add-more-states',
+          'add-soft-deletes',
+          'add-organizations-schema',
+          'add-credentials-column',
+          'rename-item-to-resource',
+          'rename-organization-items-to-resources',
+          'add-resource-setup-forms'
+        ])
+
+        // Verify all migrations have valid SQL
+        migrations.forEach(m => {
+          expect(m.sql).toBeTruthy()
+          expect(m.hash).toMatch(/^[a-f0-9]{64}$/) // SHA-256 hash
+        })
+      })
+
+      it('should handle complex SQL features', async () => {
+        const migrations = await scanMigrations(getFixturePath('real-world'))
+        
+        // Check for enum type creation and modification
+        const enumMigration = migrations.find(m => m.name === 'create-items-table')
+        expect(enumMigration?.sql).toContain('CREATE TYPE')
+        
+        // Check for trigger function creation
+        expect(enumMigration?.sql).toContain('CREATE OR REPLACE FUNCTION trigger_set_timestamp()')
+        
+        // Check for table renaming and constraint updates
+        const renameMigration = migrations.find(m => m.name === 'rename-item-to-resource')
+        expect(renameMigration?.sql).toContain('ALTER TABLE')
+        expect(renameMigration?.sql).toContain('RENAME TO')
+        
+        // Check for complex schema with relationships
+        const schemaMigration = migrations.find(m => m.name === 'add-organizations-schema')
+        expect(schemaMigration?.sql).toContain('CREATE TABLE')
+        expect(schemaMigration?.sql).toContain('REFERENCES')
+        expect(schemaMigration?.sql).toContain('PRIMARY KEY')
+      })
+    })
   })
 })
