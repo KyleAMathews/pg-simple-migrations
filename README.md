@@ -87,33 +87,17 @@ Options:
 # Install dependencies
 pnpm install
 
+# Start Postgres
+docker compose up -d
+
 # Run tests
 pnpm test
 
 # Build
 pnpm build
-
-# Run with TypeScript
-pnpm dev
 ```
 
-### Running Tests
-
-Make sure you have PostgreSQL running locally and set the following environment variables:
-
-```bash
-export PGHOST=localhost
-export PGPORT=5432
-export PGDATABASE=test
-export PGUSER=postgres
-export PGPASSWORD=postgres
-```
-
-Then run:
-
-```bash
-pnpm test
-```
+The tests are configured to work with the Postgres instance started by docker compose.
 
 ## How it Works
 
