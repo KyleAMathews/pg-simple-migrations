@@ -37,7 +37,6 @@
 - Queries for completed migrations
 - Records newly completed migrations
 - Provides list of previously run migrations to scanner for validation
-- Does not manage schema creation (schemas must exist before using the tool)
 
 ### 3. Migration Runner (`src/runner.ts`)
 - Coordinates between Scanner and StateManager
@@ -103,32 +102,73 @@ pg-simple-migrations/
     - Non-SQL extensions
     - Invalid SQL syntax
     - Invalid number formats
-- Test isolation:
-  - Uses unique schema names per test to prevent conflicts
-  - Properly cleans up schemas between tests
-  - Handles concurrent test execution safely
+    - Unicode characters in names
+  - Database connection issues
+
+## Build & Package
+- TypeScript compilation via tsup
+- Generates both ESM and CJS outputs
+- Ships with type definitions
+- Minimal dependencies:
+  - `pg` for PostgreSQL connectivity
+  - `dotenv` for environment handling
+  - `commander` for CLI interface
+
+## Error Handling
+- Detailed error messages for common scenarios:
+  - Invalid migration file names
+  - SQL syntax errors
+  - Database connection issues
+  - Concurrent migration attempts
+  - Missing environment variables
+  - Invalid migration numbers:
+    - Numbers lower than highest previous migration
+    - Gaps larger than maximum allowed
+  - Duplicate migration numbers
+- Automatic rollback of failed migrations
+- Logging of migration progress and errors
+- Clear warning messages for ignored files
 
 ## Security Considerations
-- Validates SQL before execution
-- Runs migrations in transactions for atomicity
-- Validates file names to prevent directory traversal
-- Ignores hidden files and non-SQL extensions
-- Does not attempt to create schemas (must be pre-existing)
-- Uses parameterized queries for all database operations
+- SQL Injection Protection:
+  - Uses parameterized queries for all database operations
+  - Properly escapes schema and table identifiers
+  - Migration SQL is executed directly (by design) - users must trust their migration files
+- File System Security:
+  - Validates file paths to prevent directory traversal attacks
+  - Normalizes paths and ensures files are within migration directory
+  - Ignores hidden files and non-SQL extensions
+- Database Security:
+  - Uses transactions for atomicity
+  - Implements advisory locks to prevent concurrent migrations
+  - Validates migration file hashes to detect tampering
+  - Uses parameterized queries for all state management
 
 ## Migration File Rules
-1. Files must be named: `<number>-<description>.sql`
-2. Numbers must be positive integers
-3. New migration numbers must be higher than all existing ones
-4. Maximum gap between consecutive migrations is configurable
-5. Files must have `.sql` extension
-6. Files cannot be hidden (no leading `.`)
-7. SQL must be valid PostgreSQL syntax
-8. SQL must reference schema explicitly (e.g., `CREATE TABLE myschema.table`)
+
+1. File Naming:
+   - Must match pattern: `<number>-<name>.sql`
+   - Number must be a positive integer
+   - Name can contain letters, numbers, underscores, dashes
+   - File must have .sql extension
+   - No hidden files (starting with .)
+
+2. Migration Numbers:
+   - Must be higher than all previously run migrations
+   - Maximum allowed gap between consecutive new migrations (default: 50)
+   - No duplicate numbers allowed
+   - Must be valid positive integers
+
+3. SQL Content:
+   - Must be valid SQL syntax
+   - Validated before migration is accepted
+   - Tracked with SHA-256 hash to detect changes
 
 ## Schema Management
-- The tool does not create or manage schemas
-- Schemas must exist before running migrations
-- Migration files must explicitly reference schemas in their SQL
+- The tool requires the schema for its state table to exist before running migrations
+- Users can create additional schemas through migrations
+- Schema resolution follows PostgreSQL's standard rules:
+  - Uses schema from DATABASE_URL by default
+  - Can be overridden via tool configuration for specific schemas
 - State table is created in a specified schema (defaults to 'public')
 - Multiple instances can run concurrently in different schemas

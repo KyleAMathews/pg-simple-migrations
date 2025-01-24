@@ -16,7 +16,8 @@ export class StateManager {
   constructor(pool: Pool, options: StateManagerOptions = {}) {
     this.pool = pool
     this.schema = options.schema || 'public'
-    this.tableName = `${this.schema}.${MIGRATIONS_TABLE}`
+    // Use double quotes to properly escape identifiers
+    this.tableName = `"${this.schema}"."${MIGRATIONS_TABLE}"`
   }
 
   async initialize(): Promise<void> {
@@ -29,13 +30,13 @@ export class StateManager {
           name TEXT NOT NULL,
           hash TEXT NOT NULL,
           executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        )
+        );
       `)
 
-      // Create index on number for faster lookups
+      // Create index if it doesn't exist
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_${MIGRATIONS_TABLE}_number 
-        ON ${this.tableName}(number)
+        CREATE INDEX IF NOT EXISTS "${MIGRATIONS_TABLE}_number_idx"
+        ON ${this.tableName} (number);
       `)
     } finally {
       client.release()
