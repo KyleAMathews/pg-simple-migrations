@@ -1,15 +1,6 @@
 # pg-simple-migrations
 
-A simple, schema-aware PostgreSQL migration tool that helps you manage database migrations with ease.
-
-## Features
-
-- 🚀 Simple and intuitive CLI interface
-- 📁 Organize migrations by schema
-- 🔒 Transactional migrations
-- 📊 Migration state tracking
-- 🔍 Status command to view pending and completed migrations
-- ✨ TypeScript support
+Manage Postgres migrations with a folder of `.sql` files.
 
 ## Installation
 
