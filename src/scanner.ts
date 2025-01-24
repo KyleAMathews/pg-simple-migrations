@@ -15,8 +15,11 @@ export interface ScanOptions {
 }
 
 export async function scanMigrations(directory: string, options: ScanOptions = {}): Promise<Migration[]> {
+  logger.info(`Scanning directory: ${directory}`)
+
   // Read all files in the directory
   const files = await fs.readdir(directory)
+  logger.info(`Found ${files.length} files`)
   
   // Track ignored files for logging
   const ignoredFiles: { file: string; reason: string }[] = []
@@ -70,6 +73,8 @@ export async function scanMigrations(directory: string, options: ScanOptions = {
       return parseInt(aMatch[1], 10) - parseInt(bMatch[1], 10)
     })
 
+  logger.info(`Found ${validFiles.length} migration files`)
+
   const migrationPromises = validFiles.map(async file => {
     const match = file.match(MIGRATION_FILE_PATTERN)!
     const [, numberStr, name] = match
@@ -77,6 +82,8 @@ export async function scanMigrations(directory: string, options: ScanOptions = {
     const filePath = path.join(directory, file)
     const sql = await fs.readFile(filePath, 'utf-8')
     
+    logger.info(`Processing migration ${number}: ${name}`)
+
     // Validate SQL syntax
     const sqlError = validateSql(sql, file)
     if (sqlError) {
@@ -91,6 +98,8 @@ export async function scanMigrations(directory: string, options: ScanOptions = {
       .createHash('sha256')
       .update(sql)
       .digest('hex')
+
+    logger.info(`SQL hash: ${hash}`)
 
     return {
       number,
@@ -111,6 +120,8 @@ export async function scanMigrations(directory: string, options: ScanOptions = {
 
   // Wait for all promises
   const migrations = await Promise.all(migrationPromises)
+
+  logger.info(`Successfully processed ${migrations.length} migrations`)
 
   // Check for duplicate migration numbers
   const numbersSeen = new Map<number, string>()

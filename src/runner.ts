@@ -19,7 +19,7 @@ export class Runner {
     this.directory = directory
     this.pool = pool
     this.stateManager = new StateManager(pool, {
-      schema: options.migrationTableSchema,
+      schema: options.schema,
     })
     this.options = options
   }
@@ -34,47 +34,59 @@ export class Runner {
     try {
       // Start transaction
       await client.query('BEGIN')
+      logger.info('Started transaction')
 
       // Ensure migrations table exists
       await this.initialize()
+      logger.info('Initialized migrations table')
 
       // Get migrations from filesystem
       const migrations = await scanMigrations(this.directory, {
         previousMigrations: await this.stateManager.getCompletedMigrations(),
       })
+      logger.info(`Found ${migrations.length} migrations in filesystem`)
+
+      // Get completed migrations
+      const completed = await this.stateManager.getCompletedMigrations()
+      logger.info(`Found ${completed.length} completed migrations`)
+      const completedNumbers = new Set(completed.map(m => m.number))
 
       // Filter out already run migrations
-      const pendingMigrations = migrations.filter(m => !m.hasRun)
+      const pendingMigrations = migrations.filter(m => !completedNumbers.has(m.number))
+      logger.info(`Found ${pendingMigrations.length} pending migrations`)
 
       if (pendingMigrations.length === 0) {
         logger.info('No pending migrations')
         return
       }
 
-      // Run each pending migration
+      // Run each migration in order
       for (const migration of pendingMigrations) {
-        try {
-          logger.info(`Running migration ${migration.number}: ${migration.name}`)
-          
-          // Execute the migration SQL
-          await client.query(migration.sql)
-          
-          // Record successful migration
-          await this.stateManager.recordMigration(migration)
-          
-          logger.info(`Completed migration ${migration.number}`)
-        } catch (error) {
-          logger.error(`Error running migration ${migration.number}: ${error instanceof Error ? error.message : String(error)}`)
-          throw error
-        }
+        logger.info(`Running migration ${migration.number}: ${migration.name}`)
+
+        // Run the migration with schema prefix
+        const schema = this.options.schema || 'public'
+        await client.query(`SET search_path TO "${schema}"`)
+        await client.query(migration.sql)
+        logger.info(`Executed migration SQL`)
+
+        // Record successful migration
+        await this.stateManager.recordMigration(migration)
+        logger.info(`Recorded migration in state table`)
+
+        logger.info(`✓ Migration ${migration.number} completed`)
       }
+
+      // Log success
+      logger.info(`Successfully ran ${pendingMigrations.length} migrations`)
 
       // Commit transaction
       await client.query('COMMIT')
-      logger.info(`Successfully ran ${pendingMigrations.length} migrations`)
+      logger.info('Committed transaction')
     } catch (error) {
-      // Rollback on error
+      // Rollback transaction on error
       await client.query('ROLLBACK')
+      logger.error('Rolled back transaction due to error')
       throw error
     } finally {
       client.release()
